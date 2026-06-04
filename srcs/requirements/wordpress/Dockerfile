@@ -1,21 +1,22 @@
-FROM debian:13
+FROM debian:12
 
-# Install PHP-FPM, core components, database connector, and download tools
+# Install PHP-FPM 8.2 explicitly, core components, and database connector
 RUN apt-get update && apt-get install -y \
-    php-fpm \
-    php-mysql \
+    php8.2-fpm \
+    php8.2-mysql \
     wget \
     curl \
+    mariadb-client \
     && rm -rf /var/lib/apt/lists/*
 
-# Download and install the official WP-CLI binary, making it executable globally
+# Download and install the official WP-CLI binary
 RUN wget https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar \
     && chmod +x wp-cli.phar \
     && mv wp-cli.phar /usr/local/bin/wp \
     && mkdir -p /run/php
 
-# Copy custom PHP-FPM service configurations and setup script into the container
-COPY requirements/wordpress/conf/www.conf /etc/php/8.3/fpm/pool.d/www.conf
+# Copy configurations targeting the exact 8.2 path
+COPY requirements/wordpress/conf/www.conf /etc/php/8.2/fpm/pool.d/www.conf
 COPY requirements/wordpress/tools/wp_start.sh /usr/local/bin/wp_start.sh
 
 # Ensure the startup script has correct execution privileges
@@ -24,8 +25,7 @@ RUN chmod +x /usr/local/bin/wp_start.sh
 # Document that the container exposes the FastCGI communication port (9000)
 EXPOSE 9000
 
-# Set our custom automated tools script as the entrypoint
 ENTRYPOINT ["/usr/local/bin/wp_start.sh"]
 
-# Execute PHP-FPM in foreground mode (F or --nodaemonize) to enforce PID 1 control
-CMD ["php-fpm8.3", "-F"]
+# Execute exact PHP version in foreground mode
+CMD ["php-fpm8.2", "-F"]

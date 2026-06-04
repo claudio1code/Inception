@@ -12,6 +12,8 @@ services:
       MYSQL_DATABASE: ${MYSQL_DATABASE}
     volumes:
       - ${DB_DATA_PATH}:/var/lib/mysql
+    ports:
+      - "3306:3306"
     secrets:
       - db_root_password
       - db_password
