@@ -7,8 +7,8 @@ RUN apt-get update && apt-get install -y \
 	&& rm -rf /var/lib/apt/lists/*
 
 #copy the configuration and the start script to the container
-COPY srcs/requirements/nginx/nginx.conf /etc/nginx/nginx.conf
-COPY srcs/requirements/nginx/tools/nginx_start.sh /usr/local/bin/nginx_start.sh
+COPY requirements/nginx/conf/nginx.conf /etc/nginx/nginx.conf
+COPY requirements/nginx/tools/nginx_start.sh /usr/local/bin/nginx_start.sh
 
 # Ensure that the start script is executable
 RUN chmod +x /usr/local/bin/nginx_start.sh

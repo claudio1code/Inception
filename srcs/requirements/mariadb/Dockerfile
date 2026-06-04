@@ -6,8 +6,8 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy our custom configuration layout and the initialization tools script into the image
-COPY srcs/requirements/mariadb/conf/my.cnf /etc/mysql/mariadb.conf.d/50-server.cnf
-COPY srcs/requirements/mariadb/tools/mariadb_start.sh /usr/local/bin/mariadb_start.sh
+COPY requirements/mariadb/conf/my.cnf /etc/mysql/mariadb.conf.d/50-server.cnf
+COPY requirements/mariadb/tools/mariadb_start.sh /usr/local/bin/mariadb_start.sh
 
 # Grant execution rights to our startup script inside the container filesystem
 RUN chmod +x /usr/local/bin/mariadb_start.sh

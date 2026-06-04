@@ -1,0 +1,78 @@
+services:
+  # ==========================================================================
+  # DATABASE SERVICE (MARIADB)
+  # ==========================================================================
+  mariadb:
+    container_name: mariadb
+    build:
+      context: .
+      dockerfile: requirements/mariadb/Dockerfile
+    restart: always
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+    volumes:
+      - ${DB_DATA_PATH}:/var/lib/mysql
+    secrets:
+      - db_root_password
+      - db_password
+    networks:
+      - inception_network
+
+  # ==========================================================================
+  # WORDPRESS & PHP-FPM SERVICE
+  # ==========================================================================
+  wordpress:
+    container_name: wordpress
+    build:
+      context: .
+      dockerfile: requirements/wordpress/Dockerfile
+    restart: always
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      DOMAIN_NAME: ${DOMAIN_NAME}
+    volumes:
+      - ${WP_DATA_PATH}:/var/www/html
+    secrets:
+      - db_password
+      - credentials
+    networks:
+      - inception_network
+    depends_on:
+      - mariadb
+
+  # ==========================================================================
+  # NGINX WEB SERVER SERVICE (THE ONLY PUBLIC GATEWAY)
+  # ==========================================================================
+  nginx:
+    container_name: nginx
+    build:
+      context: .
+      dockerfile: requirements/nginx/Dockerfile
+    restart: always
+    ports:
+      - "443:443"
+    volumes:
+      - ${WP_DATA_PATH}:/var/www/html
+    networks:
+      - inception_network
+    depends_on:
+      - wordpress
+
+# ============================================================================
+# NETWORKS DEFINITION
+# ============================================================================
+networks:
+  inception_network:
+    name: inception_network
+    driver: bridge
+
+# ============================================================================
+# SECRETS DEFINITION (EXTERNAL FILES)
+# ============================================================================
+secrets:
+  db_root_password:
+    file: ../secrets/db_root_password.txt
+  db_password:
+    file: ../secrets/db_password.txt
+  credentials:
+    file: ../secrets/credentials.txt

@@ -15,8 +15,8 @@ RUN wget https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.ph
     && mkdir -p /run/php
 
 # Copy custom PHP-FPM service configurations and setup script into the container
-COPY srcs/requirements/wordpress/conf/www.conf /etc/php/8.3/fpm/pool.d/www.conf
-COPY srcs/requirements/wordpress/tools/wp_start.sh /usr/local/bin/wp_start.sh
+COPY requirements/wordpress/conf/www.conf /etc/php/8.3/fpm/pool.d/www.conf
+COPY requirements/wordpress/tools/wp_start.sh /usr/local/bin/wp_start.sh
 
 # Ensure the startup script has correct execution privileges
 RUN chmod +x /usr/local/bin/wp_start.sh
