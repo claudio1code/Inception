@@ -20,7 +20,7 @@ if [ ! -d "/var/lib/mysql/mysql" ]; then
     TMP_FILE="/tmp/init_db.sql"
 
 	cat << EOF > $TMP_FILE
--- Força o carregamento das tabelas de permissão no modo bootstrap
+-- Force the internal MariaDB server to reload the grant tables and apply any default security settings
 FLUSH PRIVILEGES;
 
 -- Secure the administrator 'root' account with a strong password for local access
