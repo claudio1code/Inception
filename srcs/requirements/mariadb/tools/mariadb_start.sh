@@ -19,7 +19,10 @@ if [ ! -d "/var/lib/mysql/mysql" ]; then
     # Create a temporary SQL script file that MariaDB will execute during bootstrap
     TMP_FILE="/tmp/init_db.sql"
 
-    cat << EOF > $TMP_FILE
+	cat << EOF > $TMP_FILE
+-- Força o carregamento das tabelas de permissão no modo bootstrap
+FLUSH PRIVILEGES;
+
 -- Secure the administrator 'root' account with a strong password for local access
 ALTER USER 'root'@'localhost' IDENTIFIED BY '${DB_ROOT_PASSWORD}';
 
