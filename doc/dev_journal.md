@@ -4,6 +4,138 @@ Este arquivo serve para registrar todo o progresso, decisões técnicas e obstá
 
 ---
 
+## [2026-06-07] - Validação de Tráfego e Conectividade em Tempo Real
+
+### Contexto
+Após a implementação das correções no MariaDB e o estabelecimento do túnel SSH SOCKS5, foi realizada uma inspeção nos logs de acesso do Nginx para confirmar se as requisições externas estavam sendo corretamente roteadas e processadas pelo servidor web dentro da infraestrutura Docker.
+
+### Detalhamento das Etapas e Comandos
+
+1. **Monitoramento de Logs de Acesso**:
+   - Comando: `docker exec -it nginx tail -f /var/log/nginx/access.log`
+   - **Racional**: Este comando permite observar em tempo real o fluxo de entrada de dados, identificando o IP de origem, o método HTTP, o recurso solicitado e o código de status retornado.
+
+2. **Análise dos Resultados (Logs)**:
+   - **Origem (172.18.0.1)**: As requisições aparecem vindo do gateway da rede Docker, o que valida que o tráfego está sendo encaminhado corretamente através do proxy/túnel SSH.
+   - **Status 200 (OK)**: Confirma que recursos críticos (ex: `index.js`, `view.min.js`, `Manrope-VariableFont_wght.woff2`) foram entregues com sucesso.
+   - **Status 301 (Redirect)**: Observado em requisições de `/favicon.ico`, indicando que as regras de reescrita ou diretivas de diretório do Nginx estão operacionais.
+   - **User-Agent**: Confirmação de que as requisições vieram tanto do `Chrome/147.0.0.0` quanto de testes via `curl/7.81.0`.
+
+### Racional das Escolhas
+- **Monitoramento Live**: A escolha pelo `tail -f` em vez de apenas ler o arquivo é vital para validar a interação imediata do usuário com a interface web, permitindo correlacionar cliques no navegador com eventos no servidor.
+
+### Resultados Obtidos (Marcos Técnicos)
+- **Conectividade End-to-End**: Validado que o fluxo Host -> SSH Tunnel -> Nginx -> WordPress está 100% funcional.
+- **Resolução de Ativos Estáticos**: O Nginx está servindo corretamente arquivos de temas e fontes, garantindo a integridade visual do site.
+
+### Próximos Passos
+- Conclusão da documentação técnica e preparação para a submissão final do projeto.
+
+---
+
+
+## [2026-06-07] - Estratégia de Infraestrutura Headless e Acesso via Túnel SSH SOCKS5
+
+### Contexto
+Como o projeto Inception foca em administração de sistemas e infraestrutura, a VM foi configurada sem interface gráfica (Headless). Em ambientes de produção reais, a ausência de uma GUI é uma prática recomendada para maximizar a performance (redução do consumo de RAM e CPU) e minimizar a superfície de ataque do servidor. Para acessar a aplicação web (`https://clados-s.42.fr`) hospedada na VM a partir do host, foi implementada uma técnica de tunelamento dinâmico.
+
+### Detalhamento das Etapas e Comandos
+
+1. **Criação do Túnel SSH Dinâmico**:
+   - Comando: `ssh -D 9000 clados-s@127.0.0.1 -p 2222`
+   - **-D 9000**: Estabelece um encaminhamento de porta dinâmico a nível de aplicação, transformando o cliente SSH em um servidor proxy SOCKS5 na porta 9000 do host.
+   - **-p 2222**: Porta mapeada para o serviço SSH da VM.
+
+2. **Acesso via Navegador (Chrome/Brave) com Proxy e Resolução de Host**:
+   - Antes de iniciar, encerram-se processos residuais: `killall chrome` ou `killall brave-browser`.
+   - Execução do Navegador (Exemplo Chrome):
+     `google-chrome --proxy-server="socks5://127.0.0.1:9000" --host-resolver-rules="MAP clados-s.42.fr 127.0.0.1"`
+   - **--proxy-server**: Direciona todo o tráfego do navegador através do túnel SOCKS5 criado.
+   - **--host-resolver-rules**: Força o navegador a resolver o domínio `clados-s.42.fr` para o IP `127.0.0.1` (onde o túnel está escutando), contornando a necessidade de editar o arquivo `/etc/hosts` do sistema host e garantindo que as requisições cheguem à VM.
+
+### Resumo para o README (Instruções de Acesso)
+> **Nota de Infraestrutura**: Este projeto foi desenvolvido em uma VM *headless* (sem interface gráfica) para simular um ambiente de produção real, focando em segurança e eficiência de recursos.
+>
+> #### Como Acessar o WordPress via Túnel SSH
+> 1. No terminal do seu host, crie um túnel SOCKS5:
+>    ```bash
+>    ssh -D 9000 clados-s@127.0.0.1 -p 2222
+>    ```
+> 2. Inicie o navegador com proxy e resolução de host forçada:
+>
+> **Para Chrome:**
+> ```bash
+> killall google-chrome
+> google-chrome --proxy-server="socks5://127.0.0.1:9000" --host-resolver-rules="MAP clados-s.42.fr 127.0.0.1"
+> ```
+>
+> **Para Brave:**
+> ```bash
+> killall brave-browser
+> brave-browser --proxy-server="socks5://127.0.0.1:9000" --host-resolver-rules="MAP clados-s.42.fr 127.0.0.1"
+> ```
+
+### Racional das Escolhas
+- **Segurança de Servidor**: A remoção da GUI elimina vetores de ataque comuns e vulnerabilidades em bibliotecas gráficas.
+- **Portabilidade do Acesso**: O uso de flags de linha de comando no navegador permite acessar o site de forma isolada e segura, sem alterar configurações globais de rede do host.
+
+### Problemas Resolvidos (Troubleshooting)
+- **Resolução de DNS**: A flag `--host-resolver-rules` resolve o problema de o navegador não encontrar o domínio customizado `.42.fr` fora do ambiente da rede interna da VM.
+
+### Próximos Passos
+- Validação do certificado SSL autoassinado através do túnel SOCKS5.
+- Monitoramento dos logs de acesso do Nginx para confirmar o recebimento de tráfego via proxy.
+
+---
+
+## [2026-06-07] - Resolução de Erro de Conexão (Host 1130) e Falha de Bootstrap no MariaDB
+
+### Contexto
+Durante a inicialização da infraestrutura, os logs revelaram uma falha de comunicação crítica entre o WordPress e o MariaDB. Embora ambos os containers estivessem ativos, o script de bootstrap do banco de dados falhou ao tentar definir privilégios, impedindo que o WordPress gerasse o arquivo `wp-config.php`.
+
+### Detalhamento das Etapas e Comandos
+
+1. **Análise de Logs do WordPress**:
+   - `Error: Database connection error (1130) Host 'wordpress.inception_network' is not allowed to connect to this MariaDB server`.
+   - **Racional**: Indica que o MariaDB está alcançável na rede, mas recusa a conexão porque o usuário `wp_user` não foi criado corretamente ou não possui permissão para o hostname/IP originário do container WordPress.
+
+2. **Análise de Logs do MariaDB**:
+   - `ERROR: 1290 The MariaDB server is running with the --skip-grant-tables option so it cannot execute this statement`.
+   - `2026-06-07 17:28:52 0 [ERROR] Aborting`.
+   - **Racional**: O motor do MariaDB, ao ser executado em modo de inicialização/bootstrap, encontrou um conflito onde comandos de gestão de usuários (`ALTER USER`, `GRANT`) foram bloqueados pela política de segurança de tabelas de permissão não carregadas.
+
+3. **Refatoração do Script de Bootstrap (`mariadb_start.sh`)**:
+   - Implementação de um novo bloco SQL para o arquivo temporário de inicialização:
+     ```sql
+     FLUSH PRIVILEGES;
+     ALTER USER 'root'@'localhost' IDENTIFIED BY '${DB_ROOT_PASSWORD}';
+     CREATE DATABASE IF NOT EXISTS ${MYSQL_DATABASE};
+     CREATE USER IF NOT EXISTS 'wp_user'@'%' IDENTIFIED BY '${DB_PASSWORD}';
+     GRANT ALL PRIVILEGES ON ${MYSQL_DATABASE}.* TO 'wp_user'@'%';
+     FLUSH PRIVILEGES;
+     ```
+
+### Problemas Resolvidos (Troubleshooting)
+
+- **Erro 1290 (Skip Grant Tables)**:
+  - **Sintoma**: O container MariaDB aborta durante o setup inicial.
+  - **Causa**: Tentativa de modificar usuários enquanto o sistema está em um estado que ignora as tabelas de privilégios.
+  - **Solução**: Inclusão do comando `FLUSH PRIVILEGES;` no topo do script SQL. Isso força o MariaDB a recarregar as tabelas de subvenção mesmo no modo de bootstrap, permitindo a execução de comandos `ALTER` e `GRANT`.
+
+- **Erro 1130 (Host Not Allowed)**:
+  - **Sintoma**: WordPress reporta que o host não tem permissão para conectar.
+  - **Causa**: O usuário do banco de dados provavelmente estava restrito ao `localhost` ou o script que o criaria falhou devido ao Erro 1290.
+  - **Solução**: Definição explícita do host como `'%'` (wildcard) para o `wp_user`. Na arquitetura de containers, o WordPress conecta-se via rede interna (`inception_network`), e seu IP/hostname não será o `localhost` do ponto de vista do MariaDB.
+
+### Racional das Escolhas
+- **Idempotência e Segurança**: O uso de `IF NOT EXISTS` garante que o script possa ser re-executado sem erros. A segunda chamada de `FLUSH PRIVILEGES` ao final garante que as alterações entrem em vigor imediatamente antes do daemon principal assumir o controle.
+
+### Próximos Passos
+- Aplicar a alteração no arquivo `srcs/requirements/mariadb/tools/mariadb_start.sh`.
+- Realizar o reset do volume do MariaDB com `make fclean` para testar a nova lógica de bootstrap do zero.
+
+---
+
 ## [2026-06-05] - Estabilização Final: Infraestrutura Operacional e Saudável
 
 ### Contexto
