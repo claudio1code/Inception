@@ -4,6 +4,217 @@ Este arquivo serve para registrar todo o progresso, decisões técnicas e obstá
 
 ---
 
+## [2026-06-05] - Estabilização Final: Infraestrutura Operacional e Saudável
+
+### Contexto
+Após sucessivas rodadas de depuração técnica e ajustes finos nos scripts de bootstrap e arquivos de configuração, a infraestrutura completa do projeto Inception atingiu o estado operacional esperado. Todos os requisitos de conectividade, segurança e persistência foram validados via runtime.
+
+### Detalhamento das Etapas e Comandos
+
+1. **Validação de Runtime (`docker ps`)**:
+   - Os containers foram verificados e apresentam o status `Up`, indicando que os processos principais (daemons) estão mantidos em primeiro plano com sucesso.
+   - **Nginx**: Mapeamento de porta `443:443` ativo (IPv4 e IPv6).
+   - **WordPress**: Rodando internamente na porta `9000`.
+   - **MariaDB**: Escutando internamente na porta `3306`.
+
+### Resultados Obtidos (Marcos Técnicos)
+
+- **Saúde dos Serviços**: 
+  - O Nginx está servindo tráfego via TLSv1.2/1.3.
+  - O PHP-FPM está processando o WordPress e comunicando-se com o MariaDB sem erros de permissão ou conexão.
+  - O MariaDB inicializou corretamente os usuários e o banco de dados após o reset físico dos volumes (`fclean`).
+
+- **Isolamento de Rede**:
+  - A `inception_network` permite a resolução de nomes entre serviços (ex: `fastcgi_pass wordpress:9000`), mantendo o banco de dados inacessível de fora da rede Docker, conforme o princípio de segurança exigido.
+
+### Racional das Escolhas
+- **Resiliência via Scripts**: A robustez atual da infraestrutura é fruto de scripts de entrypoint que lidam com a geração automática de certificados e a inicialização condicional de bancos de dados, garantindo portabilidade absoluta do projeto.
+
+### Próximos Passos
+- Verificação visual do site através do navegador acessando `https://clados-s.42.fr`.
+- Preparação para a defesa técnica (viva voce), revisando os conceitos de Docker, Volumes e Redes documentados neste diário.
+
+---
+
+## [2026-06-05] - Resolução de Conflitos de Configuração e Persistência de Dados
+
+### Contexto
+Com a infraestrutura orquestrada, surgiram falhas de runtime específicas nos serviços WordPress e MariaDB. A análise dos logs revelou erros de sintaxe em arquivos de configuração do PHP e inconsistências lógicas no banco de dados causadas por estados residuais de builds anteriores.
+
+### Detalhamento das Etapas e Comandos
+
+1. **Correção de Sintaxe no PHP-FPM (`www.conf`)**:
+   - Substituição do caractere de comentário `#` por `;` em todo o arquivo.
+   - **Racional**: Arquivos de configuração do PHP-FPM seguem o padrão `.ini`, onde o caractere `#` é interpretado como uma entrada de configuração inválida, resultando no erro `value is NULL for a ZEND_INI_PARSER_ENTRY`.
+
+2. **Saneamento de Dados Persistentes (`make fclean`)**:
+   - Execução de uma limpeza profunda para remover os volumes físicos no host (`~/data/mariadb`).
+   - Re-inicialização completa da infraestrutura.
+
+### Problemas Resolvidos (Troubleshooting)
+
+- **Erro: PHP-FPM falha com ZEND_INI_PARSER_ENTRY**:
+  - **Sintoma**: Container WordPress encerra imediatamente com erro de parser.
+  - **Causa**: Uso de comentários estilo Bash (`#`) em um arquivo de configuração que exige ponto e vírgula (`;`).
+  - **Solução**: Refatoração do `www.conf` para seguir o padrão estrito de comentários do PHP.
+
+- **Erro: MariaDB Connection Error (1130) - Host not allowed**:
+  - **Sintoma**: WordPress incapaz de conectar ao banco, apesar das credenciais estarem corretas no `.env`.
+  - **Causa (Estado Fantasma)**: Tentativas de build anteriores (sem arquivos de segredos) criaram a estrutura de diretórios do MySQL no host, mas falharam na criação do usuário `wp_user`. Como o script `mariadb_start.sh` verifica a existência da pasta para garantir a idempotência, ele pulava a criação dos usuários em execuções subsequentes, deixando o banco em um estado "meio-inicializado".
+  - **Solução**: Uso do `make fclean` para deletar os dados físicos no host, forçando o script de bootstrap a re-executar a lógica de criação de usuários e privilégios (`GRANT ALL PRIVILEGES...`) do zero, agora com os segredos disponíveis.
+
+### Racional das Escolhas
+- **Idempotência vs. Limpeza**: A lógica de proteção do script de inicialização do banco é essencial para produção, mas durante o desenvolvimento, o conhecimento sobre quando forçar um reset total (`fclean`) é vital para evitar depurações de estados inconsistentes.
+
+### Próximos Passos
+- Validação final do acesso ao painel do WordPress via `https://clados-s.42.fr`.
+- Registro do status final de "Healthy" para todos os containers.
+
+---
+
+## [2026-06-05] - Estabilização de Ambiente: Migração para Debian 12 e Refatoração do Nginx
+
+### Contexto
+Visando a estabilidade dos binários e a conformidade com as versões de pacotes esperadas (especialmente PHP 8.2), decidiu-se pela alteração da imagem base do projeto. Adicionalmente, logs de erro do Nginx revelaram uma falha estrutural no arquivo de configuração que impedia o boot do serviço.
+
+### Detalhamento das Etapas e Comandos
+
+1. **Downgrade Estratégico de SO (`Debian 12`)**:
+   - Substituição de `debian:13` por `debian:12` nos Dockerfiles.
+   - **Racional**: O Debian 12 (Bookworm) é a versão estável atual, oferecendo suporte nativo e previsível para o PHP 8.2, resolvendo o problema de "comando não encontrado" encontrado na versão Testing (Debian 13).
+
+2. **Correção Estrutural da Configuração do Nginx (`nginx.conf`)**:
+   - Inclusão do bloco obrigatório `events { worker_connections 1024; }`.
+   - Adição de `include /etc/nginx/mime.types;` e `default_type application/octet-stream;` para correta interpretação de ativos estáticos.
+   - Refinamento do bloco `location ~ \.php$` com a inclusão de `snippets/fastcgi-php.conf`.
+
+### Problemas Resolvidos (Troubleshooting)
+
+- **Erro: Nginx falha ao iniciar (Falta do bloco 'events')**:
+  - **Sintoma**: Container Nginx entra em loop de reinicialização mesmo com scripts de ferramentas corretos.
+  - **Causa**: O Nginx exige a presença do bloco `events` no arquivo de configuração principal, mesmo que vazio, para definir o modelo de processamento de conexões. Sem ele, o arquivo é considerado sintaticamente inválido para o daemon.
+  - **Solução**: Adição do bloco `events` no topo do `nginx.conf`.
+
+- **Sincronização de PHP no Debian 12**:
+  - A migração para Debian 12 confirmou a presença do binário `php-fpm8.2`, eliminando o erro de execução anterior e estabilizando o serviço WordPress.
+
+### Racional das Escolhas
+- **Estabilidade vs. Novidade**: A escolha pelo Debian 12 prioriza a robustez do ecossistema de pacotes estáveis, essencial para um ambiente de infraestrutura que exige alta disponibilidade e previsibilidade.
+- **MIME Types**: A inclusão do `mime.types` garante que o navegador identifique corretamente arquivos CSS e JS, evitando problemas de renderização do site.
+
+### Próximos Passos
+- Análise dos logs do container WordPress para validar a conexão com o banco de dados.
+- Verificação final da infraestrutura após o re-build completo.
+
+---
+
+## [2026-06-05] - Depuração Técnica e Estabilização dos Microserviços
+
+### Contexto
+Após a subida inicial da infraestrutura, os containers apresentaram comportamentos instáveis (ciclos de reinicialização). Esta sessão foi dedicada à análise profunda dos logs e arquivos de configuração para identificar e corrigir falhas de execução nos serviços Nginx, MariaDB e WordPress.
+
+### Detalhamento das Etapas e Comandos
+
+1. **Correção do Fluxo de Execução do Nginx**:
+   - Identificou-se que o script `nginx_start.sh` estava truncado. A ausência do comando `exec "$@"` impedia que o processo do Nginx assumisse o PID 1, fazendo com que o container encerrasse imediatamente após o `mkdir`.
+   - Implementação da geração silenciosa de certificados SSL via `openssl` para garantir o protocolo HTTPS mandatório.
+
+2. **Ajuste de Sintaxe no MariaDB**:
+   - Correção do arquivo `my.cnf` onde a diretiva `bind-address` estava escrita incorretamente como `bind-adress`. O motor do MariaDB não reconhece a chave mal grafada, resultando em falha crítica no boot.
+
+3. **Sincronização de Versões no WordPress (PHP-FPM)**:
+   - Resolução do erro `Exit Code 127` (Command not found). O Dockerfile tentava executar o `php-fpm8.3`, mas a imagem base (Debian 13) provê a versão estável `8.2`. O comando foi atualizado para refletir a versão correta instalada no sistema.
+
+### Problemas Resolvidos (Troubleshooting)
+
+- **Bug 1: NGINX Incompleto e Encerramento Prematuro**:
+  - **Sintoma**: Container com status `Exited (0)` ou `Restarting`.
+  - **Causa**: O script de ferramentas parava após a criação do diretório. Sem o `exec "$@"`, o processo principal do container terminava.
+  - **Solução**: Restauração do script completo com lógica de geração de certificados e substituição do processo (`exec`) para manter o daemon em primeiro plano.
+
+- **Bug 2: Erro de Digitação no MariaDB (Typo)**:
+  - **Sintoma**: MariaDB falhando ao iniciar com erro de configuração inválida.
+  - **Causa**: Falta de um 'd' na palavra `address` (`bind-adress`).
+  - **Solução**: Correção ortográfica para `bind-address = 0.0.0.0`.
+
+- **Bug 3: Incompatibilidade de Versão do PHP no WordPress**:
+  - **Sintoma**: `Exit Code 127`.
+  - **Causa**: O binário `php-fpm8.3` não existe no repositório padrão do Debian 13, que utiliza a versão `8.2`.
+  - **Solução**: Ajuste do `CMD` no Dockerfile para `php-fpm8.2 -F`.
+
+### Racional das Escolhas
+- **PID 1 Handling**: O uso do `exec` é uma decisão crítica de design para que o container receba corretamente sinais do sistema (como `SIGTERM`), garantindo um desligamento limpo.
+- **Versionamento Estrito**: Optou-se por travar a versão do PHP na `8.2` para garantir que o ambiente de desenvolvimento seja idêntico ao de produção/avaliação, evitando falhas silenciosas por atualizações de pacotes.
+
+### Próximos Passos
+- Execução de `make fclean` e `make` para aplicar as correções em um ambiente limpo.
+- Verificação final da conectividade HTTPS via navegador.
+
+---
+
+## [2026-06-05] - Lançamento da Infraestrutura e Validação de Orquestração
+
+### Contexto
+Após a criação manual dos arquivos de segredos no diretório `secrets/`, procedeu-se a uma nova tentativa de inicialização via `make`. O objetivo era validar a persistência dos volumes e a conectividade entre os microserviços.
+
+### Detalhamento das Etapas e Comandos
+
+1. **Execução do Build e Up (`make`)**:
+   - Os diretórios de persistência no host foram validados e as imagens foram reconstruídas em 42.7s.
+   - A rede `inception_network` foi criada com sucesso.
+   - Os containers foram instanciados na ordem de dependência correta.
+
+2. **Estado Operacional Observado**:
+   - **Comando**: `docker ps`
+   - **Resultado**: Os três containers (`nginx`, `wordpress`, `mariadb`) foram iniciados. No entanto, o sistema reportou um estado de reinicialização intermitente logo após o boot.
+
+### Problemas Resolvidos (Troubleshooting)
+
+- **Sucesso no Bind Mount**: A criação dos arquivos de texto na pasta `secrets/` resolveu o erro crítico de "bind source path does not exist", permitindo que o Docker Compose concluísse a montagem dos volumes de segredos.
+
+- **Análise Técnica de Runtime (Ciclo de Reinicialização)**:
+  - Observou-se que os containers entraram em ciclo de restart com os seguintes códigos de saída:
+    - `nginx`: Status `Restarting (0)`. Indica que o processo principal terminou sem erros, sugerindo que o script de entrypoint pode ter finalizado o setup SSL mas não manteve o daemon do Nginx em foreground (ex: falta do `daemon off;` ou erro no `exec`).
+    - `wordpress`: Status `Restarting (127)`. Código típico de "Command not found", indicando possível erro de sintaxe no script `wp_start.sh` ou ausência de uma dependência esperada no PATH.
+    - `mariadb`: Status `Restarting (7)`. Indica um erro de execução interno, possivelmente relacionado a permissões no diretório de dados montado ou falha crítica no script de bootstrap.
+
+### Racional das Escolhas
+- **Manutenção do Estado**: A decisão de manter a política de restart como `always` ou `on-failure` no `docker-compose.yml` permitiu identificar rapidamente que, embora a orquestração (Docker Compose) tenha funcionado, a lógica interna dos containers (scripts de tools) ainda requer ajustes finos de execução.
+
+### Próximos Passos
+- Inspeção profunda dos logs (`docker logs`) de cada serviço para identificar as causas exatas das saídas prematuras.
+- Ajuste dos scripts de entrypoint para garantir que os processos permaneçam ativos em primeiro plano.
+
+---
+
+## [2026-06-05] - Falha Crítica na Inicialização: Ausência de Arquivos de Segredos (Secrets)
+
+### Contexto
+Com a automação do `Makefile` pronta, procedeu-se à tentativa de inicialização da infraestrutura completa. O objetivo desta sessão era validar o build das imagens e a subida dos containers em modo orquestrado.
+
+### Detalhamento das Etapas e Comandos
+
+1. **Execução do Orquestrador (`make`)**:
+   - O comando iniciou corretamente a criação dos diretórios persistentes no host (`~/data/mariadb` e `~/data/wordpress`).
+   - O processo de build das imagens (`nginx`, `mariadb`, `wordpress`) foi concluído com sucesso em 39.4s, confirmando que os Dockerfiles e contextos de build estão corretos.
+
+### Problemas Resolvidos (Troubleshooting)
+
+- **Erro: invalid mount config for type "bind": bind source path does not exist**:
+  - **Sintoma**: Falha imediata ao tentar criar o container do MariaDB após o build.
+  - **Causa Raiz**: O `docker-compose.yml` utiliza a funcionalidade de `secrets` baseada em arquivos (`file: ...`). O Docker tenta realizar um bind mount do host para dentro do container no caminho `/home/clados-s/Inception/secrets/db_root_password.txt`. Como os arquivos físicos de texto que devem conter as senhas reais ainda não foram criados no diretório `secrets/`, o Docker Engine aborta a criação do container por falta da fonte do mount.
+  - **Avisos Prévios**: O console também exibiu alertas de que os segredos externos não existiam (`WARN[0040] secret file srcs_db_root_password does not exist`).
+  - **Solução Planejada**: Criação manual dos arquivos `.txt` dentro da pasta `secrets/` com as credenciais definidas no subject, garantindo que o Docker encontre os alvos para o bind mount.
+
+### Racional das Escolhas
+- **Gestão de Segredos via Arquivo**: Optou-se por não automatizar a criação desses arquivos no `Makefile` por questões de segurança; o operador deve ser responsável por gerir as credenciais sensíveis fora do controle de versão.
+
+### Próximos Passos
+- Criação dos arquivos `db_root_password.txt`, `db_password.txt` e demais segredos necessários.
+- Nova execução do comando `make` para validar a orquestração completa.
+
+---
+
 ## [2026-06-04] - Orquestração de Microserviços e Automação de Ciclo de Vida
 
 ### Contexto
