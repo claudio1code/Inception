@@ -4,6 +4,93 @@ Este arquivo serve para registrar todo o progresso, decisões técnicas e obstá
 
 ---
 
+## [2026-06-09] - Reforço de Segurança: Isolamento de Rede do Banco de Dados (MariaDB)
+
+### Contexto
+Um dos pilares de segurança do projeto Inception é o isolamento dos serviços. O banco de dados MariaDB deve ser acessível exclusivamente pelo container WordPress através da rede interna (`inception_network`), nunca sendo exposto diretamente ao sistema host ou à rede externa. Foi realizado um teste de auditoria para validar se essa restrição estava sendo aplicada.
+
+### Detalhamento das Etapas e Comandos
+
+1. **Auditoria de Segurança (Falha Identificada)**:
+   - Comando: `nc -zv 127.0.0.1 3306`
+   - **nc (netcat)**: Utilitário para leitura e escrita em conexões de rede.
+   - **-z**: Modo scan (não envia dados).
+   - **-v**: Modo verboso.
+   - **Resultado**: `Connection to 127.0.0.1 3306 port [tcp/mysql] succeeded!`.
+   - **Racional**: O sucesso da conexão indicou que o tráfego do host estava alcançando o MariaDB, o que representa um risco de segurança e viola o princípio de menor privilégio.
+
+2. **Análise de Causa Raiz**:
+   - Inspeção do `srcs/docker-compose.yml`.
+   - Identificou-se a presença do bloco `ports: - "3306:3306"`.
+   - **Racional**: A diretiva `ports` no Docker Compose realiza o mapeamento (forwarding) da porta do host para a porta do container, abrindo um túnel que ignora o isolamento pretendido da bridge network.
+
+3. **Correção e Remediação**:
+   - Remoção completa do bloco `ports` no serviço `mariadb` do arquivo `docker-compose.yml`.
+   - Reinicialização da infraestrutura: `make down && make up`.
+
+4. **Validação Final (Sucesso)**:
+   - Comando: `nc -zv 127.0.0.1 3306`
+   - **Resultado**: `nc: connect to 127.0.0.1 port 3306 (tcp) failed: Connection refused`.
+   - **Racional**: O erro "Connection refused" confirma que a porta 3306 não está mais escutando no host, garantindo que o MariaDB está agora devidamente isolado.
+
+### Racional das Escolhas e Decisões Críticas
+A comunicação entre WordPress e MariaDB não é afetada por essa mudança, pois ambos compartilham a `inception_network`. O Docker gerencia a resolução de nomes interna (DNS), permitindo que o WordPress utilize o host `mariadb` na porta `3306` sem que essa porta precise estar aberta para o mundo exterior. Esta configuração é mandatória para garantir que o banco de dados não sofra tentativas de ataques de força bruta ou varreduras vindas de fora da infraestrutura orquestrada.
+
+### Problemas Resolvidos (Troubleshooting)
+- **Vulnerabilidade de Exposição de Porta**: Eliminado o acesso externo não autorizado ao serviço de banco de dados.
+
+### Próximos Passos
+- Realizar auditoria semelhante em outros serviços (WordPress/PHP-FPM) para garantir isolamento total.
+
+---
+
+## [2026-06-09] - Verificação de Persistência de Dados via Bind Mounts
+
+### Contexto
+O objetivo desta sessão foi validar se a infraestrutura do projeto Inception cumpre o requisito de persistência de dados. Foi realizado um teste funcional onde uma alteração de estado na aplicação (criação de um novo post no WordPress) deve sobreviver à destruição completa dos containers da infraestrutura.
+
+### Detalhamento das Etapas e Comandos
+
+1. **Alteração de Estado (Aplicação)**:
+   - Acesso ao painel administrativo do WordPress via `https://clados-s.42.fr/wp-admin`.
+   - Criação e publicação de um novo post intitulado "Teste de Persistência".
+   - **Racional**: Esta ação gera registros na tabela `wp_posts` dentro do banco de dados MariaDB.
+
+2. **Destruição da Infraestrutura**:
+   - Comando: `make down`
+   - **O que acontece**: O comando executa `docker compose down`, que interrompe e remove os containers, redes e imagens (se especificado), mas não toca nos volumes montados ou caminhos do host. Neste ponto, os processos do MariaDB e WordPress deixam de existir.
+
+3. **Reinstanciação da Infraestrutura**:
+   - Comando: `make up`
+   - **O que acontece**: O comando recria os containers a partir das imagens. Ao subir o MariaDB, o Docker realiza novamente o mapeamento do diretório do host para dentro do container.
+
+4. **Validação**:
+   - Novo acesso ao site e confirmação de que o post "Teste de Persistência" ainda está visível.
+
+### Racional das Escolhas e Decisões Críticas
+
+A persistência observada ocorre devido ao uso de **Bind Mounts** em vez de volumes gerenciados pelo Docker. No arquivo `srcs/docker-compose.yml`, a persistência é definida nos blocos:
+
+- **MariaDB**: `- ${DB_DATA_PATH}:/var/lib/mysql`
+- **WordPress**: `- ${WP_DATA_PATH}:/var/www/html`
+
+Diferente de um container padrão, onde os dados são gravados na camada de escrita temporária (que é destruída com o container), o Bind Mount vincula um diretório específico do sistema de arquivos do host (`/home/claudio/data/...`) a um diretório dentro do container. 
+
+No `Makefile`, os caminhos são definidos e criados durante o alvo `up`:
+- `WP_DATA_PATH = /home/claudio/data/wordpress`
+- `DB_DATA_PATH = /home/claudio/data/mariadb`
+
+Isso garante que, mesmo quando o container é removido pelo `make down`, os arquivos binários do banco de dados e os arquivos estáticos do WordPress permanecem salvos no disco da VM. Para apagar esses dados permanentemente, deve-se utilizar o comando `make fclean`, que executa `rm -rf` nestes diretórios.
+
+### Resultados Obtidos (Marcos Técnicos)
+- **Integridade de Dados**: Confirmado que o ciclo de vida dos containers está desvinculado da persistência dos dados.
+- **Conformidade com o Subject**: A infraestrutura utiliza caminhos absolutos no host para armazenamento, conforme exigido.
+
+### Próximos Passos
+- Verificação final de segurança e permissões dos volumes antes da entrega.
+
+---
+
 ## [2026-06-07] - Validação de Tráfego e Conectividade em Tempo Real
 
 ### Contexto

@@ -7,8 +7,8 @@ COMPOSE_FILE  = srcs/docker-compose.yml
 
 # Physical paths on the host system where data will persist
 # These must match the values defined inside your srcs/.env file
-WP_DATA_PATH  = /home/clados-s/data/wordpress
-DB_DATA_PATH  = /home/clados-s/data/mariadb
+WP_DATA_PATH  = /home/claudio/data/wordpress
+DB_DATA_PATH  = /home/claudio/data/mariadb
 
 # ============================================================================ #
 #                                 RULES & TARGETS                              #
