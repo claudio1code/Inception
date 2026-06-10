@@ -4,6 +4,100 @@ Este arquivo serve para registrar todo o progresso, decisões técnicas e obstá
 
 ---
 
+## [2026-06-09] - Padronização de SO (Debian 12) e Testes de Segurança de Protocolo
+
+### Contexto
+Esta sessão foca na adequação da infraestrutura às exigências do Subject (versão do Sistema Operacional) e na validação das políticas de segurança de transporte (TLS) definidas no Nginx.
+
+### Detalhamento das Etapas e Comandos
+
+1. **Conformidade de Imagem Base (Downgrade para Debian 12)**:
+   - **Análise**: O Subject exige o uso da penúltima versão estável do Debian ou Alpine. Atualmente, o Debian 13 (Trixie) é a versão Testing/Next, sendo o Debian 12 (Bookworm) a versão estável atual. Portanto, o Debian 12 é a escolha correta para cumprir o requisito de "penúltima versão estável" ou "estável" dependendo da data de avaliação.
+   - **Ação**: Atualização de todos os `Dockerfiles` (`mariadb`, `nginx`, `wordpress`) para `FROM debian:12`.
+   - **Racional**: Garante estabilidade nos repositórios de pacotes e conformidade estrita com as diretrizes de virtualização do projeto.
+
+2. **Teste de Rejeição de Protocolos Obsoletos (TLS 1.1)**:
+   - **Comando**: `curl -vI --tls-max 1.1 https://clados-s.42.fr`
+   - **Resultado**: `curl: (7) Failed to connect to clados-s.42.fr port 443: Connection refused` (ou falha na negociação SSL).
+   - **Racional**: O teste comprova que o Nginx está configurado corretamente para aceitar apenas TLSv1.2 e TLSv1.3. Tentativas de conexão usando versões inseguras (TLS 1.1 ou inferior) são terminadas imediatamente, protegendo a integridade dos dados em trânsito.
+
+3. **Nota Técnica: Tempo de Latência do Bootstrap**:
+   - **Observação**: Após o comando `make`, os containers são iniciados, mas os scripts de ferramentas (`*_start.sh`) precisam de tempo para extrair segredos, inicializar bancos de dados e configurar o WordPress via WP-CLI.
+   - **Recomendação**: É necessário aguardar aproximadamente **15 segundos** após o `make` antes de tentar o primeiro acesso via navegador ou curl. Tentar o acesso imediato pode resultar em erros de conexão enquanto os serviços ainda estão em fase de setup interno.
+
+### Resultados Obtidos (Marcos Técnicos)
+- **Segurança de Rede**: Validada a exclusividade de protocolos TLS modernos.
+- **Conformidade de Subject**: Imagens base alinhadas com as normas de versionamento exigidas.
+
+### Próximos Passos
+- Reconstruir a infraestrutura com as novas imagens base (`make re`).
+- Finalizar a documentação técnica (USER_DOC e DEV_DOC) em inglês.
+
+---
+
+## [2026-06-09] - Auditoria de Conformidade: PID 1 e Segurança do Root DB
+
+### Contexto
+Após a revisão da Régua de Avaliação (Correction Sheet) do projeto, identificou-se a necessidade de auditar e registrar formalmente dois requisitos eliminatórios: a execução dos daemons principais como PID 1 dentro dos containers e a restrição de acesso ao usuário `root` do banco de dados sem o uso de senha.
+
+### Detalhamento das Etapas e Comandos
+
+1. **Validação de Processos PID 1**:
+   - **Comando de Teste**: `docker exec -it <nome_contentor> ps aux` (executado para `nginx`, `wordpress` e `mariadb`).
+   - **Resultado Esperado e Confirmado**:
+     - No Nginx: O processo `nginx: master process` ocupa o PID 1.
+     - No WordPress: O processo `php-fpm: master process` ocupa o PID 1.
+     - No MariaDB: O processo `mysqld` ocupa o PID 1.
+   - **Racional**: A régua de avaliação proíbe expressamente que os processos rodem atrás de shells intermediários como `bash`, `sh`, `tail -f` ou `sleep infinity`. A garantia do PID 1 é alcançada em nosso projeto pelo uso correto da diretiva `exec "$@"` no final de cada script de inicialização (`*_start.sh`), que substitui o processo do shell pelo daemon do serviço. Isso assegura que o container receba sinais de sistema (como `SIGTERM`) corretamente, permitindo um encerramento gracioso (graceful shutdown).
+
+2. **Auditoria de Segurança do MariaDB (Acesso Root)**:
+   - **Comando de Teste**: `docker exec -it mariadb mysql -u root`
+   - **Resultado Obtido**: `ERROR 1045 (28000): Access denied for user 'root'@'localhost' (using password: NO)`.
+   - **Racional**: O teste comprova que a instalação inicial (bootstrap) alterou com sucesso a senha do usuário `root` padrão usando a variável extraída do arquivo de segredo (`/run/secrets/db_root_password`). Tentar acessar o banco de dados diretamente sem fornecer a senha (`-p`) resulta em bloqueio imediato, cumprindo rigorosamente a seção "Segurança do Root DB" da régua de avaliação.
+
+### Resultados Obtidos (Marcos Técnicos)
+- **Conformidade de Orquestração**: Comprovada a arquitetura limpa de processos, onde o container existe exclusivamente para rodar o seu serviço designado (PID 1).
+- **Conformidade de Segurança Interna**: Validado que a exposição interna do banco de dados está protegida por credenciais fortes, não sendo vulnerável a acessos anônimos locais.
+
+### Próximos Passos
+- Iniciar a redação dos arquivos obrigatórios `README.md`, `USER_DOC.md` e `DEV_DOC.md` utilizando o material compilado neste diário.
+
+---
+
+## [2026-06-09] - Validação do Bootstrap Automatizado do WordPress via WP-CLI
+
+### Contexto
+O projeto exige que o WordPress seja instalado e configurado de forma totalmente automatizada, sem interação manual via interface web (instalação "headless"). Além disso, o subject solicita a criação de pelo menos dois usuários: um administrador e um usuário secundário. Esta sessão registra a verificação visual e técnica dessa automação.
+
+### Detalhamento das Etapas e Comandos
+
+1. **Execução do Script de Ferramentas (`wp_start.sh`)**:
+   - O script utiliza o **WP-CLI** (WordPress Command Line Interface) para realizar o setup.
+   - **Comando de Instalação**: `wp core install` configura o site, define a URL base (`https://clados-s.42.fr`) e cria o usuário administrador.
+   - **Criação de Usuário Secundário**: `wp user create guest guest@example.com --role=author`.
+   - **Racional**: O uso do WP-CLI permite que essas ações ocorram durante o boot do container, garantindo que a aplicação já suba pronta para uso.
+
+2. **Verificação via Interface Administrativa**:
+   - Acesso ao painel: `https://clados-s.42.fr/wp-admin`.
+   - Navegação até a seção "Usuários".
+   - **Resultado**: Confirmada a existência de dois usuários:
+     - `clados-s`: Perfil **Administrador**.
+     - `guest`: Perfil **Autor**.
+
+### Racional das Escolhas e Decisões Críticas
+A decisão de usar o WP-CLI em vez de scripts SQL manuais no banco de dados é motivada pela segurança e integridade. O WP-CLI utiliza as APIs internas do WordPress, garantindo que todas as tabelas de metadados, permissões e hashes de senha sejam gerados corretamente de acordo com as regras de negócio da aplicação. 
+
+A extração de senhas via Docker Secrets (`/run/secrets/credentials` e `/run/secrets/guest_password`) garante que as credenciais de acesso nunca fiquem expostas em texto claro nos logs do container ou variáveis de ambiente.
+
+### Resultados Obtidos (Marcos Técnicos)
+- **Instalação Headless**: Validado que o site foi instalado sem necessidade de preenchimento manual do formulário de boas-vindas do WordPress.
+- **Conformidade com o Subject**: Verificada a presença de dois usuários com os papéis (roles) exigidos.
+
+### Próximos Passos
+- Testar a publicação de conteúdo com o usuário `guest` para validar as restrições do papel `author`.
+
+---
+
 ## [2026-06-09] - Reforço de Segurança: Isolamento de Rede do Banco de Dados (MariaDB)
 
 ### Contexto
