@@ -1,0 +1,34 @@
+name: Teste de Infraestrutura Inception
+
+on:
+  push:
+    branches : ["main"]
+  workflow_dispatch:
+
+jobs:
+  testar-projeto:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Baixar o código do repositório
+        uses: actions/checkout@v4
+
+      - name: 📥 Criar arquivo .env
+        run: |
+          cat << 'EOF' > srcs/.env
+          DOMAIN_NAME=clados-s.42.fr
+          MYSQL_DATABASE=wordpress
+          MYSQL_USER=wp_user
+          MYSQL_PASSWORD=wp_pass
+          MYSQL_ROOT_PASSWORD=root_pass
+          WORDPRESS_DB_HOST=mariadb
+          WORDPRESS_DB_NAME=wordpress
+          WORDPRESS_DB_USER=wp_user
+          WORDPRESS_DB_PASSWORD=wp_pass
+          EOF
+
+      - name: 🚀 Construir arquitetura
+        run: make
+
+      - name: 🐳 Verificar Contêineres
+        run: docker ps -a
+

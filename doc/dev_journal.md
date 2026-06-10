@@ -4,6 +4,36 @@ Este arquivo serve para registrar todo o progresso, decisões técnicas e obstá
 
 ---
 
+## [2026-06-09] - Diagnóstico de Logs: Identificação de Falha de Rede Externa
+
+### Contexto
+Durante a tentativa de build da infraestrutura, o processo falhou. Esta entrada documenta quais linhas específicas do log técnico comprovam que o problema é de conectividade de rede externa e não um erro de lógica nos scripts do projeto.
+
+### Detalhamento dos Indicadores de Erro (Logs)
+
+No output do comando `docker compose build`, as seguintes linhas foram os indicadores críticos de falha de rede:
+
+1. **Tentativa de Conexão Falha**:
+   - `Err:1 http://deb.debian.org/debian bookworm InRelease`
+   - `Could not connect to deb.debian.org:80 (...), connection timed out`
+   - **Análise Técnica**: O prefixo `Err:` seguido por `Could not connect` e `connection timed out` é a prova definitiva de que o container tentou alcançar o servidor externo, mas o pacote TCP não recebeu resposta antes do limite de tempo (timeout).
+
+2. **Falha no Download de Índices (W - Warning)**:
+   - `W: Failed to fetch http://deb.debian.org/debian/dists/bookworm/InRelease`
+   - **Análise Técnica**: O aviso `Failed to fetch` indica que o `apt` desistiu de tentar baixar a lista de pacotes após múltiplas tentativas de conexão falhas.
+
+3. **Incapacidade de Localizar Pacotes**:
+   - `E: Unable to locate package nginx`
+   - **Análise Técnica**: Este erro (`E:`) é uma consequência direta do problema de rede. Como o `apt update` falhou ao baixar os índices, o gerenciador de pacotes não tem conhecimento da existência dos programas para instalar, resultando no erro de localização.
+
+### Racional do Diagnóstico
+A identificação precisa destes logs permite diferenciar um erro de **sintaxe** (onde o script estaria escrito errado) de um erro de **infraestrutura** (onde o ambiente de execução não possui acesso à internet). No caso em questão, a persistência de "connection timed out" em múltiplos endereços IP (151.101.194.132, 151.101.2.132, etc.) confirma que o problema está na rota de saída da máquina pessoal ou no servidor de DNS do Docker.
+
+### Resultados Obtidos
+- Diagnóstico técnico concluído: O projeto está correto, mas o ambiente de build está isolado da internet.
+
+---
+
 ## [2026-06-09] - Padronização de SO (Debian 12) e Testes de Segurança de Protocolo
 
 ### Contexto
