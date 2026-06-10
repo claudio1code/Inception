@@ -8,6 +8,8 @@ on:
 jobs:
   testar-projeto:
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: 📥 Baixar o código do repositório
         uses: actions/checkout@v4
