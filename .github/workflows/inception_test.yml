@@ -48,3 +48,38 @@ jobs:
       - name: 🐳 Verificar Contêineres
         run: docker ps -a
 
+      - name: 🔒 Testar Segurança do Nginx (Portas e TLS)
+        run: |
+          echo "Aguardando 15 segundos para a geração do certificado e boot completo..."
+          sleep 15
+          
+          # 1. Ensinar o robô a resolver o teu domínio para a rede local (localhost)
+          echo "127.0.0.1 clados-s.42.fr" | sudo tee -a /etc/hosts
+          
+          echo "========================================"
+          echo "Teste 1.1: Tentar aceder à porta 80 (HTTP)"
+          if curl -I -s -m 5 http://clados-s.42.fr; then
+            echo "❌ ERRO: A porta 80 está a responder. Ela tem de estar bloqueada!"
+            exit 1
+          else
+            echo "✅ SUCESSO: Porta 80 inacessível."
+          fi
+          
+          echo "========================================"
+          echo "Teste 1.2: Acesso com HTTPS"
+          if curl -I -k -s -f https://clados-s.42.fr; then
+            echo "✅ SUCESSO: HTTPS está a funcionar corretamente (TLSv1.2/1.3)."
+          else
+            echo "❌ ERRO: Falha ao conectar via HTTPS."
+            exit 1
+          fi
+          
+          echo "========================================"
+          echo "Teste 1.3: Forçar protocolo obsoleto (TLS 1.1)"
+          if curl -I -k -s -m 5 --tls-max 1.1 https://clados-s.42.fr; then
+            echo "❌ ERRO: O servidor aceitou TLS 1.1. Ele tem de rejeitar!"
+            exit 1
+          else
+            echo "✅ SUCESSO: Conexão com TLS 1.1 recusada com sucesso."
+          fi
+
