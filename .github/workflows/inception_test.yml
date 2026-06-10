@@ -34,6 +34,12 @@ jobs:
           WP_DATA_PATH=/home/clados-s/data/wordpress
           EOF
 
+          mkdir -p secrets
+          echo "root_pass" > secrets/db_root_password.txt
+          echo "wp_pass" > secrets/db_password.txt
+          echo "admin_pass" > secrets/credentials.txt
+          echo "guest_pass" > secrets/guest_password.txt
+
       - name: 🚀 Construir arquitetura
         run: make
 
