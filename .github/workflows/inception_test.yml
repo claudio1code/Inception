@@ -12,7 +12,7 @@ jobs:
       - name: 📥 Baixar o código do repositório
         uses: actions/checkout@v4
 
-      - name: 📥 Criar arquivo .env
+      - name: 🔐 Criar arquivo .env temporário
         run: |
           cat << 'EOF' > srcs/.env
           DOMAIN_NAME=clados-s.42.fr
@@ -24,6 +24,14 @@ jobs:
           WORDPRESS_DB_NAME=wordpress
           WORDPRESS_DB_USER=wp_user
           WORDPRESS_DB_PASSWORD=wp_pass
+          WORDPRESS_ADMIN_USER=claudio_admin
+          WORDPRESS_ADMIN_PASSWORD=admin_pass
+          WORDPRESS_ADMIN_EMAIL=claudio@42.fr
+          WORDPRESS_USER=claudio_user
+          WORDPRESS_USER_PASSWORD=user_pass
+          WORDPRESS_USER_EMAIL=user@42.fr
+          DB_DATA_PATH=/home/runner/data/mariadb
+          WP_DATA_PATH=/home/runner/data/wordpress
           EOF
 
       - name: 🚀 Construir arquitetura
