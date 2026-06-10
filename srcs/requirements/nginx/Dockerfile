@@ -1,4 +1,4 @@
-FROM debian:13
+FROM debian:12
 
 # Install Nginx and OpenSSL, and clean up the package lists to reduce image size
 RUN apt-get update && apt-get install -y \

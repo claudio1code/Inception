@@ -1,4 +1,4 @@
-FROM debian:13
+FROM debian:12
 
 # Install the official MariaDB Server package and purge apt caches to optimize image size
 RUN apt-get update && apt-get install -y \
