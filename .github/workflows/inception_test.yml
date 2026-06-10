@@ -103,4 +103,34 @@ jobs:
           else
             echo "✅ SUCESSO: Acesso root anónimo negado. O banco de dados está trancado."
           fi
-
+          
+      - name: Testar Persistencia de Dados (Volumes)
+        run: |
+          echo "========================================"
+          echo "Teste 3: Sobrevivência de Dados aos Volumes"
+          
+          echo "A injetar um artigo de teste na base de dados via WP-CLI..."
+          docker exec wordpress wp post create --post_title="Teste de Persistencia 42" --post_content="Este artigo tem de sobreviver." --post_status=publish --allow-root
+          
+          echo "A destruir a infraestrutura (make down)..."
+          make down
+          
+          echo "A verificar se os contentores foram removidos..."
+          if [ "$(docker ps -q)" ]; then
+            echo "ERRO: O make down não parou todos os contentores!"
+            exit 1
+          fi
+          
+          echo "A reconstruir a infraestrutura..."
+          make
+          
+          echo "Aguardar 15 segundos para o arranque do MariaDB e WordPress..."
+          sleep 15
+          
+          echo "A procurar o artigo injetado..."
+          if docker exec wordpress wp post list --field=post_title --allow-root | grep -q "Teste de Persistencia 42"; then
+            echo "SUCESSO: O artigo sobreviveu à destruição. Os volumes (Bind Mounts) estao perfeitos!"
+          else
+            echo "ERRO: O artigo desapareceu. Falha grave na persistencia de dados."
+            exit 1
+          fi
