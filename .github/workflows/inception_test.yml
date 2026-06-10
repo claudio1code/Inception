@@ -82,4 +82,25 @@ jobs:
           else
             echo "✅ SUCESSO: Conexão com TLS 1.1 recusada com sucesso."
           fi
+      - name: 🛡️ Testar Isolamento e Segurança do Banco de Dados
+        run: |
+          echo "========================================"
+          echo "Teste 2: Isolamento da Rede (Porta 3306 no Host)"
+          # O netcat (nc) tem de falhar. Se tiver sucesso, a porta está exposta indevidamente.
+          if nc -zv 127.0.0.1 3306 2>/dev/null; then
+            echo "❌ ERRO: A porta 3306 do MariaDB está exposta no host! Violação de isolamento."
+            exit 1
+          else
+            echo "✅ SUCESSO: O MariaDB está perfeitamente isolado. Conexão externa recusada."
+          fi
+
+          echo "========================================"
+          echo "Teste 4: Segurança do Root no MariaDB"
+          # Tentar aceder ao mysql sem password como root diretamente dentro do contentor. Tem de falhar.
+          if docker exec mariadb mysql -u root 2>/dev/null; then
+            echo "❌ ERRO: Foi possível aceder ao root do MariaDB sem password!"
+            exit 1
+          else
+            echo "✅ SUCESSO: Acesso root anónimo negado. O banco de dados está trancado."
+          fi
 
